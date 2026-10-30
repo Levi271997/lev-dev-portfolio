@@ -95,3 +95,123 @@ document.getElementById('copy-email').addEventListener('click', function () {
     })(start);
   }
 })();
+
+// Hero headline: wrap each word in its own mask so it can rise into place on load (the animation lives in CSS)
+(function () {
+  var h1 = document.querySelector('.hero h1'), i = 0;
+  if (!h1) return;
+  (function walk(node) {
+    Array.prototype.slice.call(node.childNodes).forEach(function (n) {
+      if (n.nodeType === 1) return walk(n);
+      if (n.nodeType !== 3) return;
+      var frag = document.createDocumentFragment();
+      n.textContent.split(/(\s+)/).forEach(function (part) {
+        if (!part) return;
+        if (/^\s+$/.test(part)) return frag.appendChild(document.createTextNode(part));
+        var w = document.createElement('span'), inner = document.createElement('span');
+        w.className = 'w'; inner.className = 'wi'; inner.textContent = part;
+        inner.style.setProperty('--i', i++);
+        w.appendChild(inner); frag.appendChild(w);
+      });
+      n.parentNode.replaceChild(frag, n);
+    });
+  })(h1);
+})();
+
+// Marquee: constant drift that speeds up and leans with scroll velocity
+(function () {
+  var band = document.querySelector('.marquee'), track = band && band.querySelector('.track');
+  if (!track) return;
+  track.innerHTML += track.innerHTML;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var x = 0, half = 0, last = performance.now(), lastY = scrollY, boost = 0, visible = true;
+  function measure() { half = track.offsetWidth / 2; }
+  measure();
+  addEventListener('resize', measure);
+  if (document.fonts) document.fonts.ready.then(measure);
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (e) { visible = e[0].isIntersecting; }).observe(band);
+  }
+  (function step(now) {
+    var dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    boost += (Math.abs(scrollY - lastY) / Math.max(dt, 0.001) - boost) * 0.08;
+    lastY = scrollY;
+    if (visible && half) {
+      x -= (70 + boost * 0.6) * dt;
+      if (-x >= half) x += half;
+      track.style.transform = 'translate3d(' + x + 'px,0,0) skewX(' + -Math.min(boost / 250, 10) + 'deg)';
+    }
+    requestAnimationFrame(step);
+  })(last);
+})();
+
+// Belief line: words light up one by one as the band scrolls through the viewport
+(function () {
+  var p = document.querySelector('.belief p');
+  if (!p || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var words = p.textContent.trim().split(/\s+/);
+  p.textContent = '';
+  words.forEach(function (w, i) {
+    var s = document.createElement('span');
+    s.className = 'bw'; s.textContent = w;
+    p.appendChild(s);
+    if (i < words.length - 1) p.appendChild(document.createTextNode(' '));
+  });
+  var spans = p.querySelectorAll('.bw'), lit = -1;
+  function update() {
+    var r = p.getBoundingClientRect(), prog = (innerHeight * 0.85 - r.top) / (innerHeight * 0.5);
+    var n = Math.round(Math.max(0, Math.min(1, prog)) * spans.length);
+    if (n === lit) return;
+    lit = n;
+    spans.forEach(function (s, i) { s.classList.toggle('lit', i < n); });
+  }
+  addEventListener('scroll', update, { passive: true });
+  addEventListener('resize', update);
+  update();
+})();
+
+// Pointer-only polish: magnetic buttons, tilting service cards, a "Visit" tag that trails the cursor over projects
+(function () {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+
+  document.querySelectorAll('.btn, .email button').forEach(function (el) {
+    el.addEventListener('pointermove', function (e) {
+      var r = el.getBoundingClientRect();
+      el.style.transform = 'translate(' + (e.clientX - r.left - r.width / 2) * 0.25 + 'px,' + (e.clientY - r.top - r.height / 2) * 0.35 + 'px)';
+    });
+    el.addEventListener('pointerleave', function () { el.style.transform = ''; });
+  });
+
+  document.querySelectorAll('.svc').forEach(function (el) {
+    el.addEventListener('pointermove', function (e) {
+      if (el.classList.contains('rv')) return;
+      var r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+      el.style.setProperty('--mx', x * 100 + '%');
+      el.style.setProperty('--my', y * 100 + '%');
+      el.style.transform = 'perspective(900px) rotateX(' + (0.5 - y) * 8 + 'deg) rotateY(' + (x - 0.5) * 10 + 'deg)';
+    });
+    el.addEventListener('pointerleave', function () { el.style.transform = ''; });
+  });
+
+  var tag = document.createElement('div');
+  tag.className = 'cursor-tag';
+  tag.setAttribute('aria-hidden', 'true');
+  tag.innerHTML = '<span>Visit site ↗</span>';
+  document.body.appendChild(tag);
+  var tx = 0, ty = 0, x = 0, y = 0, on = false;
+  addEventListener('pointermove', function (e) { tx = e.clientX; ty = e.clientY; }, { passive: true });
+  function loop() {
+    x += (tx - x) * 0.18; y += (ty - y) * 0.18;
+    tag.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
+    if (on) requestAnimationFrame(loop);
+  }
+  document.querySelectorAll('.proj').forEach(function (el) {
+    el.addEventListener('pointerenter', function (e) {
+      if (on) return;
+      if (!tag.classList.contains('on')) { x = tx = e.clientX; y = ty = e.clientY; }
+      on = true; tag.classList.add('on'); loop();
+    });
+    el.addEventListener('pointerleave', function () { on = false; tag.classList.remove('on'); });
+  });
+})();
